@@ -5,7 +5,10 @@ import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWVidMode;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL30;
 import org.lwjgl.system.MemoryUtil;
+
+import java.io.IOException;
 
 public class GameEngine {
     private long window;
@@ -21,6 +24,12 @@ public class GameEngine {
             throw new IllegalStateException("Unable to initialize GLFW");
         }
 
+        // Set OpenGL version hints for macOS
+        GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR, 3);
+        GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, 3);
+        GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_FORWARD_COMPAT, GL11.GL_TRUE); // Required for macOS
+        GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE, GLFW.GLFW_OPENGL_CORE_PROFILE); // Use core profile
+
         window = GLFW.glfwCreateWindow(width, height, "OpenGL 3D Engine", MemoryUtil.NULL, MemoryUtil.NULL);
         if (window == MemoryUtil.NULL) {
             throw new RuntimeException("Failed to create GLFW window");
@@ -34,11 +43,20 @@ public class GameEngine {
 
         GL11.glEnable(GL11.GL_DEPTH_TEST);
 
+        // Ensure a VAO is bound (required in OpenGL Core profile)
+        int vao = GL30.glGenVertexArrays();
+        GL30.glBindVertexArray(vao);
+
         camera = new Camera();
-        model = ModelLoader.loadOBJ("assets/cube.obj");
+        try {
+            model = ModelLoader.loadOBJ("assets/obj/cube.obj");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         shader = new Shader("shaders/vertex.glsl", "shaders/fragment.glsl");
-        texture = new Texture("assets/texture.png");
+        texture = new Texture("assets/textures/texture.png");
     }
+
 
     public void loop() {
         while (running && !GLFW.glfwWindowShouldClose(window)) {
