@@ -18,6 +18,7 @@ public class GameEngine {
     private Model model;
     private Shader shader;
     private Texture texture;
+    private long lastFrameTime;
 
     public void init() {
         if (!GLFW.glfwInit()) {
@@ -47,7 +48,9 @@ public class GameEngine {
         int vao = GL30.glGenVertexArrays();
         GL30.glBindVertexArray(vao);
 
-        camera = new Camera();
+        camera = new Camera(0, 0, 3);
+        lastFrameTime = System.nanoTime();
+
         try {
             model = ModelLoader.loadOBJ("assets/obj/cube.obj");
         } catch (IOException e) {
@@ -56,7 +59,6 @@ public class GameEngine {
         shader = new Shader("shaders/vertex.glsl", "shaders/fragment.glsl");
         texture = new Texture("assets/textures/texture.png");
     }
-
 
     public void loop() {
         while (running && !GLFW.glfwWindowShouldClose(window)) {
@@ -67,10 +69,19 @@ public class GameEngine {
 
     private void update() {
         GLFW.glfwPollEvents();
-        camera.processInput(window);
+        float deltaTime = getDeltaTime();
+        camera.processInput(window, deltaTime);
+        camera.processMouseMovement(window);
         if (GLFW.glfwGetKey(window, GLFW.GLFW_KEY_ESCAPE) == GLFW.GLFW_PRESS) {
             running = false;
         }
+    }
+
+    private float getDeltaTime() {
+        long currentTime = System.nanoTime();
+        float deltaTime = (currentTime - lastFrameTime) / 1_000_000_000.0f;
+        lastFrameTime = currentTime;
+        return deltaTime;
     }
 
     private void render() {
@@ -93,7 +104,6 @@ public class GameEngine {
 
         GLFW.glfwSwapBuffers(window);
     }
-
 
     public void cleanup() {
         model.cleanup();
