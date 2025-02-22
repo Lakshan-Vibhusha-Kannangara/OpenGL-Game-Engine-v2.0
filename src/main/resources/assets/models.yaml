@@ -1,0 +1,5 @@
+models:
+  - path: "assets/obj/cube.obj"
+    position: [0, 0, 0]
+  - path: "assets/obj/crate.obj"
+    position: [3, 0, 0]

@@ -4,6 +4,7 @@ import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
+import org.joml.Vector3f;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -14,7 +15,6 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
-
 public class ModelLoader {
 
     public static Model loadOBJ(String filePath) throws IOException {
@@ -23,111 +23,115 @@ public class ModelLoader {
             throw new IOException("OBJ file not found: " + filePath);
         }
 
-        BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
-        String line;
+        BufferedReader reader = null;
+        try {
+            reader = new BufferedReader(new InputStreamReader(inputStream));
+            String line;
 
-        List<float[]> vertices = new ArrayList<>();
-        List<float[]> textures = new ArrayList<>();
-        List<float[]> normals = new ArrayList<>();
-        List<int[]> faces = new ArrayList<>();
+            List<float[]> vertices = new ArrayList<>();
+            List<float[]> textures = new ArrayList<>();
+            List<float[]> normals = new ArrayList<>();
+            List<int[]> faces = new ArrayList<>();
 
-        while ((line = reader.readLine()) != null) {
-            String[] parts = line.split(" ");
-            if (parts.length < 2) continue;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(" ");
+                if (parts.length < 2) continue;
 
-            switch (parts[0]) {
-                case "v": // Vertex position
-                    vertices.add(new float[]{Float.parseFloat(parts[1]), Float.parseFloat(parts[2]), Float.parseFloat(parts[3])});
-                    break;
-                case "vt": // Texture coordinates
-                    textures.add(new float[]{Float.parseFloat(parts[1]), Float.parseFloat(parts[2])});
-                    break;
-                case "vn": // Vertex normals
-                    normals.add(new float[]{Float.parseFloat(parts[1]), Float.parseFloat(parts[2]), Float.parseFloat(parts[3])});
-                    break;
-                case "f": // Face
-                    int[] face = new int[9];
-                    for (int i = 0; i < 3; i++) {
-                        String[] vertexData = parts[i + 1].split("/");
-                        face[i * 3] = Integer.parseInt(vertexData[0]) - 1;  // Vertex index
-                        face[i * 3 + 1] = Integer.parseInt(vertexData[1]) - 1;  // Texture index
-                        face[i * 3 + 2] = Integer.parseInt(vertexData[2]) - 1;  // Normal index
+                switch (parts[0]) {
+                    case "v" -> // Vertex position
+                            vertices.add(new float[]{Float.parseFloat(parts[1]), Float.parseFloat(parts[2]), Float.parseFloat(parts[3])});
+                    case "vt" -> // Texture coordinates
+                            textures.add(new float[]{Float.parseFloat(parts[1]), Float.parseFloat(parts[2])});
+                    case "vn" -> // Vertex normals
+                            normals.add(new float[]{Float.parseFloat(parts[1]), Float.parseFloat(parts[2]), Float.parseFloat(parts[3])});
+                    case "f" -> { // Face definition
+                        int[] face = new int[3]; // Only handles triangles
+                        face[0] = Integer.parseInt(parts[1].split("/")[0]) - 1;
+                        face[1] = Integer.parseInt(parts[2].split("/")[0]) - 1;
+                        face[2] = Integer.parseInt(parts[3].split("/")[0]) - 1;
+                        faces.add(face);
                     }
-                    faces.add(face);
-                    break;
+                }
+            }
+
+            // Prepare vertex, texture, and normal data for OpenGL
+            float[] vertexData = new float[vertices.size() * 3];
+            float[] textureData = new float[textures.size() * 2];
+            float[] normalData = new float[normals.size() * 3];
+            int[] indices = new int[faces.size() * 3];
+
+            int vertexIndex = 0;
+            int textureIndex = 0;
+            int normalIndex = 0;
+            int indexCount = 0;
+
+            for (float[] vertex : vertices) {
+                vertexData[vertexIndex++] = vertex[0];
+                vertexData[vertexIndex++] = vertex[1];
+                vertexData[vertexIndex++] = vertex[2];
+            }
+
+            for (float[] texture : textures) {
+                textureData[textureIndex++] = texture[0];
+                textureData[textureIndex++] = texture[1];
+            }
+
+            for (float[] normal : normals) {
+                normalData[normalIndex++] = normal[0];
+                normalData[normalIndex++] = normal[1];
+                normalData[normalIndex++] = normal[2];
+            }
+
+            for (int[] face : faces) {
+                indices[indexCount++] = face[0];
+                indices[indexCount++] = face[1];
+                indices[indexCount++] = face[2];
+            }
+
+            // Create OpenGL buffers
+            int vaoId = GL30.glGenVertexArrays();
+            GL30.glBindVertexArray(vaoId);
+
+            int vboId = createVBO(vertexData, GL15.GL_ARRAY_BUFFER, 0, 3);
+            int vboTexId = createVBO(textureData, GL15.GL_ARRAY_BUFFER, 1, 2);
+            int vboNormalId = createVBO(normalData, GL15.GL_ARRAY_BUFFER, 2, 3);
+            int eboId = createEBO(indices);
+
+            GL30.glBindVertexArray(0);
+
+            // Return the model with position as (0, 0, 0) or a custom position
+            return new Model(vaoId, vboId, eboId, indices.length, new Vector3f(0, 0, 0)); // or pass a custom position if needed
+
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch (IOException e) {
+                    e.printStackTrace(); // Log error while closing the reader
+                }
             }
         }
-        reader.close();
-
-        return processModelData(vertices, textures, normals, faces);
     }
 
-    private static Model processModelData(List<float[]> vertices, List<float[]> textures, List<float[]> normals, List<int[]> faces) {
-        List<Float> vertexData = new ArrayList<>();
-        List<Integer> indices = new ArrayList<>();
-
-        for (int[] face : faces) {
-            for (int i = 0; i < 3; i++) {
-                int vertexIndex = face[i * 3];
-                int textureIndex = face[i * 3 + 1];
-                int normalIndex = face[i * 3 + 2];
-
-                float[] vertex = vertices.get(vertexIndex);
-                float[] texture = textures.get(textureIndex);
-                float[] normal = normals.get(normalIndex);
-
-                vertexData.add(vertex[0]);
-                vertexData.add(vertex[1]);
-                vertexData.add(vertex[2]);
-                vertexData.add(texture[0]);
-                vertexData.add(texture[1]);
-                vertexData.add(normal[0]);
-                vertexData.add(normal[1]);
-                vertexData.add(normal[2]);
-
-                indices.add(indices.size());
-            }
-        }
-
-        return createOpenGLModel(vertexData, indices);
-    }
-
-    private static Model createOpenGLModel(List<Float> vertexData, List<Integer> indices) {
-        int vaoId = GL30.glGenVertexArrays();
-        GL30.glBindVertexArray(vaoId);
-
-        // Convert lists to buffers
-        FloatBuffer vertexBuffer = BufferUtils.createFloatBuffer(vertexData.size());
-        vertexData.forEach(vertexBuffer::put);
-        vertexBuffer.flip();
-
-        IntBuffer indexBuffer = BufferUtils.createIntBuffer(indices.size());
-        indices.forEach(indexBuffer::put);
-        indexBuffer.flip();
-
-        // Create and bind VBO
+    // Helper method to create and return VBO
+    private static int createVBO(float[] data, int bufferType, int attributeIndex, int attributeSize) {
         int vboId = GL15.glGenBuffers();
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, vertexBuffer, GL15.GL_STATIC_DRAW);
+        GL15.glBindBuffer(bufferType, vboId);
+        FloatBuffer buffer = BufferUtils.createFloatBuffer(data.length);
+        buffer.put(data).flip();
+        GL15.glBufferData(bufferType, buffer, GL15.GL_STATIC_DRAW);
+        GL20.glVertexAttribPointer(attributeIndex, attributeSize, GL20.GL_FLOAT, false, 0, 0);
+        GL20.glEnableVertexAttribArray(attributeIndex);
+        return vboId;
+    }
 
-        // Create and bind EBO (index buffer)
+    // Helper method to create and return EBO
+    private static int createEBO(int[] indices) {
         int eboId = GL15.glGenBuffers();
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, eboId);
-        GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, indexBuffer, GL15.GL_STATIC_DRAW);
-
-        // Set vertex attribute pointers
-        int stride = 8 * Float.BYTES;
-        GL20.glVertexAttribPointer(0, 3, GL15.GL_FLOAT, false, stride, 0); // Positions
-        GL20.glEnableVertexAttribArray(0);
-        GL20.glVertexAttribPointer(1, 2, GL15.GL_FLOAT, false, stride, 3 * Float.BYTES); // Texture Coords
-        GL20.glEnableVertexAttribArray(1);
-        GL20.glVertexAttribPointer(2, 3, GL15.GL_FLOAT, false, stride, 5 * Float.BYTES); // Normals
-        GL20.glEnableVertexAttribArray(2);
-
-        // Unbind buffers
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        GL30.glBindVertexArray(0);
-
-        return new Model(vaoId, vboId, eboId, indices.size());
+        IntBuffer elementBuffer = BufferUtils.createIntBuffer(indices.length);
+        elementBuffer.put(indices).flip();
+        GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, elementBuffer, GL15.GL_STATIC_DRAW);
+        return eboId;
     }
 }

@@ -1,6 +1,7 @@
 package com.vibhusha.renderEngine;
 
 import com.vibhusha.utils.*;
+import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWVidMode;
 import org.lwjgl.opengl.GL;
@@ -9,27 +10,31 @@ import org.lwjgl.opengl.GL30;
 import org.lwjgl.system.MemoryUtil;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class GameEngine {
     private long window;
-    private int width = 800, height = 600;
+    private final int width = 800, height = 600;
     private boolean running = true;
     private Camera camera;
-    private Model model;
+    private List<Model> models;
     private Shader shader;
     private Texture texture;
     private long lastFrameTime;
+    private ExecutorService executorService;
 
     public void init() {
         if (!GLFW.glfwInit()) {
             throw new IllegalStateException("Unable to initialize GLFW");
         }
 
-        // Set OpenGL version hints for macOS
         GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR, 3);
         GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, 3);
-        GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_FORWARD_COMPAT, GL11.GL_TRUE); // Required for macOS
-        GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE, GLFW.GLFW_OPENGL_CORE_PROFILE); // Use core profile
+        GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_FORWARD_COMPAT, GL11.GL_TRUE);
+        GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE, GLFW.GLFW_OPENGL_CORE_PROFILE);
 
         window = GLFW.glfwCreateWindow(width, height, "OpenGL 3D Engine", MemoryUtil.NULL, MemoryUtil.NULL);
         if (window == MemoryUtil.NULL) {
@@ -44,18 +49,26 @@ public class GameEngine {
 
         GL11.glEnable(GL11.GL_DEPTH_TEST);
 
-        // Ensure a VAO is bound (required in OpenGL Core profile)
         int vao = GL30.glGenVertexArrays();
         GL30.glBindVertexArray(vao);
 
         camera = new Camera(0, 0, 3);
         lastFrameTime = System.nanoTime();
+        executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
         try {
-            model = ModelLoader.loadOBJ("assets/obj/cube.obj");
+            ModelConfig config = YamlLoader.load("assets/models.yaml");
+            models = new ArrayList<>();
+
+            for (ModelConfig.ModelEntry entry : config.models) {
+                Model model = ModelLoader.loadOBJ(entry.path);
+                model.setPosition(new Vector3f(entry.position[0], entry.position[1], entry.position[2]));
+                models.add(model);
+            }
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Failed to load models from YAML", e);
         }
+
         shader = new Shader("shaders/vertex.glsl", "shaders/fragment.glsl");
         texture = new Texture("assets/textures/texture.png");
     }
@@ -86,31 +99,35 @@ public class GameEngine {
 
     private void render() {
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
-
         shader.bind();
 
-        // Convert the matrices to float arrays and set them as uniforms
         float[] viewMatrixData = new float[16];
-        camera.getViewMatrix().get(viewMatrixData);  // Fill the array with the view matrix data
-        shader.setUniform("viewMatrix", viewMatrixData);  // Set the uniform
+        camera.getViewMatrix().get(viewMatrixData);
+        shader.setUniform("viewMatrix", viewMatrixData);
 
         float[] projectionMatrixData = new float[16];
-        camera.getProjectionMatrix(width, height).get(projectionMatrixData);  // Fill the array with the projection matrix data
-        shader.setUniform("projectionMatrix", projectionMatrixData);  // Set the uniform
+        camera.getProjectionMatrix(width, height).get(projectionMatrixData);
+        shader.setUniform("projectionMatrix", projectionMatrixData);
 
         texture.bind();
-        model.render();
-        shader.unbind();
 
+        for (Model model : models) {
+            model.render(shader);
+        }
+
+        shader.unbind();
         GLFW.glfwSwapBuffers(window);
     }
 
+
+
     public void cleanup() {
-        model.cleanup();
+        models.forEach(Model::cleanup);
         shader.cleanup();
         texture.cleanup();
         GLFW.glfwDestroyWindow(window);
         GLFW.glfwTerminate();
+        executorService.shutdown();
     }
 
     public static void main(String[] args) {
