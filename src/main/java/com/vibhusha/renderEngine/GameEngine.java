@@ -74,11 +74,23 @@ public class GameEngine {
     }
 
     public void loop() {
+        final int targetFPS = 60;
+        final long timePerFrame = 1_000_000_000 / targetFPS;
+        long lastTime = System.nanoTime();
+        long deltaTime;
+
         while (running && !GLFW.glfwWindowShouldClose(window)) {
-            update();
-            render();
+            long now = System.nanoTime();
+            deltaTime = now - lastTime;
+
+            if (deltaTime >= timePerFrame) {
+                update();
+                render();
+                lastTime = now;
+            }
         }
     }
+
 
     private void update() {
         GLFW.glfwPollEvents();
